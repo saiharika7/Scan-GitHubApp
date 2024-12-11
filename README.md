@@ -6,7 +6,7 @@ This GitHub App scans all `Dockerfile`s in your repositories for potential vulne
 ---
 
 ## Features
-- Scans `Dockerfile`s in all subfolders (e.g., `apps/app1/Dockerfile`).
+- Scans `Dockerfile` in all subfolders (e.g., `apps/app1/Dockerfile`).
 - Identifies vulnerabilities and provides actionable suggestions.
 - Categorizes findings according to OWASP Top 10 vulnerabilities.
 - Posts individual reports for each `Dockerfile` in the "Checks" tab.

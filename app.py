@@ -165,18 +165,28 @@ def check_vulnerabilities(file_content):
 
 
 # Clone repository and scan
-def clone_and_scan(repo_url, access_token):
+def clone_and_scan(repo_url, access_token, branch):
     """Clone the repository and scan for Dockerfile vulnerabilities."""
     repo_name = repo_url.split("/")[-1].replace(".git", "")
     repo_path = os.path.join(os.getcwd(), repo_name)
-
-    # Clean up any previous clone
-    if os.path.exists(repo_path):
-        shutil.rmtree(repo_path, ignore_errors=True)
+    
+    # Handle existing directory by adding a suffix
+    suffix = 1
+    original_repo_path = repo_path
+    while os.path.exists(repo_path):
+        repo_path = f"{original_repo_path}_{suffix}"
+        suffix += 1
 
     # Clone the repository
     token_url = repo_url.replace("https://", f"https://{access_token}@")
-    Repo.clone_from(token_url, repo_path)
+    repo = Repo.clone_from(token_url, repo_path)
+
+    # Checkout the specified branch
+    try:
+        repo.git.checkout(branch)
+        logging.info(f"Checked out branch: {branch}")
+    except Exception as e:
+        logging.warning(f"Branch '{branch}' not found or checkout failed. Using default branch. Error: {e}")
 
     # Scan all Dockerfiles inside 'apps' or any subdirectory
     results = {}
@@ -192,6 +202,8 @@ def clone_and_scan(repo_url, access_token):
     return results
 
 
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     """Webhook to trigger repository scan."""
@@ -204,9 +216,12 @@ def webhook():
     repo_url = payload["repository"]["clone_url"]
     repo_full_name = payload["repository"]["full_name"]
     head_sha = payload.get("after")
+    branch = payload.get("ref", "").replace("refs/heads/", "")
 
     if not head_sha:
         return jsonify({"error": "Invalid payload: 'after' key missing"}), 400
+    if not branch:
+        return jsonify({"error": "Invalid payload: 'ref' key missing"}), 400
 
     try:
         jwt_token = generate_jwt()
@@ -215,7 +230,7 @@ def webhook():
             return jsonify({"error": "No installation ID found"}), 400
 
         access_token = get_installation_access_token(jwt_token, installation_id)
-        scan_results = clone_and_scan(repo_url, access_token)
+        scan_results = clone_and_scan(repo_url, access_token, branch)
 
         # Post individual check runs for each Dockerfile
         for file_path, issues in scan_results.items():
@@ -229,6 +244,7 @@ def webhook():
         logging.error(f"Error processing webhook: {e}")
         return jsonify({"error": str(e)}), 500
 
+
 if __name__ == "__main__":
     logging.info("Starting Flask application.")
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=8080)

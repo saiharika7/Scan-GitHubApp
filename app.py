@@ -210,18 +210,27 @@ def webhook():
     payload = request.get_json()
     logging.debug(f"Webhook payload received: {payload}")
 
-    if not payload or "repository" not in payload:
-        return jsonify({"error": "Invalid payload: 'repository' key missing"}), 400
+    if not payload:
+        return jsonify({"error": "Invalid payload"}), 400
 
-    repo_url = payload["repository"]["clone_url"]
-    repo_full_name = payload["repository"]["full_name"]
-    head_sha = payload.get("after")
-    branch = payload.get("ref", "").replace("refs/heads/", "")
+    # Determine if this is a PR event
+    if "pull_request" in payload:
+        pr_data = payload["pull_request"]
+        repo_url = pr_data["head"]["repo"]["clone_url"]
+        branch = pr_data["head"]["ref"]
+        repo_full_name = payload["repository"]["full_name"]
+        head_sha = pr_data["head"]["sha"]
+    elif "repository" in payload:
+        # Handle other events (e.g., push)
+        repo_url = payload["repository"]["clone_url"]
+        repo_full_name = payload["repository"]["full_name"]
+        head_sha = payload.get("after")
+        branch = payload.get("ref", "").replace("refs/heads/", "")
+    else:
+        return jsonify({"error": "Unsupported event type"}), 400
 
-    if not head_sha:
-        return jsonify({"error": "Invalid payload: 'after' key missing"}), 400
-    if not branch:
-        return jsonify({"error": "Invalid payload: 'ref' key missing"}), 400
+    if not head_sha or not branch:
+        return jsonify({"error": "Invalid payload: missing branch or SHA"}), 400
 
     try:
         jwt_token = generate_jwt()
@@ -234,7 +243,6 @@ def webhook():
 
         # Post individual check runs for each Dockerfile
         for file_path, issues in scan_results.items():
-            # Use the relative path for better readability in the GitHub Checks tab
             relative_file_path = os.path.relpath(file_path, start=os.getcwd())
             post_check_run(repo_full_name, head_sha, f"Dockerfile Scan - {relative_file_path}", file_path, issues, access_token)
 
